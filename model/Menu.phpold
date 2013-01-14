@@ -1,0 +1,681 @@
+<?php
+
+	/**
+	* MPTT Class
+	* See http://phpro.org/tutorials/Managing-Hierarchical-Data-with-PHP-and-MySQL.html#76 for more informations
+	**/
+
+	class Menu extends Model{
+
+		private $tableName = "menus";
+		public $id         = "id";
+		private $name      = "name";
+		private $lft       = "lft";
+		private $rght      = "rght";
+
+		/**
+		 * Add some rules to the user's register form
+		 * This is an array composed of two argument:
+		 * - rule    : accepts 'noEmpty' and regex
+		 * - message : accepts HTML content
+		 */
+		var $validates = array(
+			'name' => array(
+				'rule' => 'notEmpty',
+				'message' => 'You have to give a title'
+			)
+		);
+
+
+		/**
+		* Test function SELECT anything and return it
+		* return somthing
+		**/
+		public function test(){
+			$pre = $this->db->prepare("SELECT * FROM users");
+			$pre->execute();
+			return $pre->fetchAll(PDO::FETCH_OBJ);
+		}
+
+		/**
+		* Find the node name wish as the given lft args
+		* @param string $left
+		* @return string
+		**/
+		function lftToNode($left){
+			$stmt = $this->db->prepare("SELECT ".$this->id." as id,".$this->name." as name FROM ".$this->tableName." WHERE ".$this->lft."=:left");
+			$stmt->bindParam(':left', $left);
+			$stmt->execute();
+
+			return $stmt->fetchAll(PDO::FETCH_OBJ);
+		}
+
+		/**
+		* Find the node name wish as the given id args
+		* @param string $id
+		* @return string
+		**/
+		function idToNode($id){
+			$stmt = $this->db->prepare("SELECT ".$this->id." as id,".$this->name." as name FROM ".$this->tableName." WHERE ".$this->id."=:id");
+			$stmt->bindParam(':id', $id);
+			$stmt->execute();
+
+			return $stmt->fetchAll(PDO::FETCH_OBJ);
+		}
+
+		/**
+		* Edit node and leaf basic information (like the name)
+		* @param array $args('field' => '', 'value' => '', 'id' => '')
+		* @return true
+		**/
+		function basicEdit($args){
+			if(isset($args['field']) && isset($args['id']) && isset($args['value'])){
+				$stmt = $this->db->prepare("UPDATE ".$this->tableName." SET ".$args['field']."= :value WHERE ".$this->id."= :id");
+				$stmt->bindParam(':value', $args['value']);
+				$stmt->bindParam(':id', $args['id']);
+				return $stmt->execute();
+			}else{
+				debug('La variable doit être de type "array" et contenir 3 valeurs : id & field & value');
+				die();
+			}
+		}
+
+		/**
+		* Edit node and leaf basic information (like the name)
+		* @param string name
+		* @param string link
+		* @param int id
+		* @return true
+		**/
+		function menuEdit($name, $link, $id){
+			$stmt = $this->db->prepare("UPDATE ".$this->tableName." SET name= :name, link= :link WHERE ".$this->id."= :id");
+			$stmt->bindParam(':name', $name);
+			$stmt->bindParam(':link', $link);
+			$stmt->bindParam(':id', $id);
+			return $stmt->execute();
+		}
+
+		/**
+		* @fetch the full tree
+		* @param string $parent
+		* @return array
+		**/
+		public function fullMenu($parent){
+			$stmt = $this->db->prepare("SELECT node.".$this->name." FROM ".$this->tableName." AS node, ".$this->tableName." AS parent WHERE node.".$this->lft." BETWEEN parent.".$this->lft." AND parent.".$this->rght." AND parent.".$this->name."=:parent ORDER BY node.".$this->lft."");
+			$stmt->bindParam(':parent', $parent);
+			$stmt->execute();
+			
+			return $stmt->fetchAll(PDO::FETCH_OBJ);
+		}
+
+		/**
+		* Find all nodes
+		* @access public
+		* @return array
+		**/
+		public function allNodes(){
+			$stmt = $this->db->prepare("SELECT ".$this->id." as id,".$this->name." as name  FROM ".$this->tableName." WHERE ".$this->rght."-".$this->lft.">1");
+			$stmt->execute();
+			return $stmt->fetchAll(PDO::FETCH_OBJ);
+		}
+
+		/**
+		* Find all leaf nodes
+		* @access public
+		* @return array
+		**/
+		public function leafNodes(){
+			$stmt = $this->db->prepare("SELECT ".$this->id." as id,".$this->name." as name FROM ".$this->tableName." WHERE ".$this->rght."=".$this->lft."+1");
+			$stmt->execute();
+			return $stmt->fetchAll(PDO::FETCH_OBJ);
+		}
+
+		/**
+		* Retrieve a single path
+		* @access public
+		* @param $node_name
+		* @return array
+		**/
+		public function singlePath($node_name){
+			$stmt = $this->db->prepare("SELECT parent.".$this->name." FROM ".$this->tableName." AS node, ".$this->tableName." AS parent WHERE node.".$this->lft." BETWEEN parent.".$this->lft." AND parent.".$this->rght." AND node.".$this->name."=:node_name ORDER BY parent.".$this->lft."");
+			$stmt->bindParam(':node_name', $node_name);
+			$stmt->execute();
+			return $stmt->fetchAll(PDO::FETCH_OBJ);
+		}
+
+		/**
+		* Retrieve a depth of nodes
+		* @access public
+		* @param $node_name
+		* @return array
+		**/
+		public function getNodeDepth(){
+			$stmt = $this->db->prepare("SELECT node.".$this->name.", (COUNT(parent.".$this->name.")-1) AS depth FROM ".$this->tableName." AS node, ".$this->tableName." AS parent WHERE node.".$this->lft." BETWEEN parent.".$this->lft." AND parent.".$this->rght." GROUP BY node.".$this->name." ORDER BY node.".$this->lft."");
+			$stmt->execute();
+			return $stmt->fetchAll(PDO::FETCH_ASSOC);
+		}
+
+		/**
+		* Retrieve  a subMenu depth
+		* @access public
+		* @param $node_name
+		* @return array
+		**/
+		public function subMenuDepth($node_name){
+			$stmt = $this->db->prepare("SELECT node.".$this->name.", (COUNT(parent.".$this->name.")-1) AS depth FROM ".$this->tableName." AS node, ".$this->tableName." AS parent WHERE node.".$this->lft." BETWEEN parent.".$this->lft." AND parent.".$this->rght." AND node.".$this->name."=:node_name GROUP BY node.".$this->name." ORDER BY node.".$this->lft."");
+			$stmt->bindParam(':node_name', $node_name);
+			$stmt->execute();
+			return $stmt->fetchAll(PDO::FETCH_OBJ);
+		}
+
+		/**
+		* @fetch local sub nodes only
+		* @access public
+		* @param $node_name
+		* @return array
+		**/
+		public function getLocalSubNodes($node_name){
+			$stmt = $this->db->prepare("SELECT node.".$this->name.", (COUNT(parent.".$this->name.")-(sub_tree.depth+1)) AS depth FROM ".$this->tableName." AS node, ".$this->tableName." AS parent, ".$this->tableName." AS sub_parent, (SELECT node.".$this->name.", (COUNT(parent.".$this->name.")-1) AS depth FROM ".$this->tableName." AS node, ".$this->tableName." AS parent WHERE node.".$this->lft." BETWEEN parent.".$this->lft." AND parent.".$this->rght." AND node.".$this->name."=:node_name GROUP BY node.".$this->name." ORDER BY node.".$this->lft.") AS sub_tree WHERE node.".$this->lft." BETWEEN parent.".$this->lft." AND parent.".$this->rght." AND node.".$this->lft." BETWEEN sub_parent.".$this->lft." AND sub_parent.".$this->rght." AND sub_parent.".$this->name."=sub_tree.".$this->name." GROUP BY node.".$this->name." HAVING depth<=1 ORDER BY node.".$this->lft."");
+			$stmt->bindParam(':node_name', $node_name, PDO::PARAM_STR);
+			$stmt->execute();
+			return $stmt->fetchAll(PDO::FETCH_OBJ);
+		}
+
+		/**
+		* @list categoires and product count
+		* @access public
+		* @return array
+		**/
+		public function productCount(){
+			$stmt = $this->db->prepare("SELECT parent.".$this->name.", COUNT(products.".$this->name.") AS product_count FROM ".$this->tableName." AS node, ".$this->tableName." AS parent, products WHERE node.".$this->lft." BETWEEN parent.".$this->lft." AND parent.".$this->rght." AND node.category_id=products.category_id GROUP BY parent.".$this->name." ORDER BY node.".$this->lft."");
+			$stmt->execute();
+			return $stmt->fetchALL(PDO::FETCH_OBJ);
+		}
+
+		/**
+		* @move a node and his children
+		* @access public
+		* @return boolean
+		**/
+		public function moveNode($movingId, $targetedId){
+			$stmt_moving = $this->db->prepare("SELECT ".$this->id.", ".$this->name.", ".$this->lft.", ".$this->rght. " FROM ".$this->tableName." WHERE id=:id");
+			$stmt_moving->bindParam(':id', $movingId);
+			$stmt_moving->execute();
+			$moving = array_shift($stmt_moving->fetchALL(PDO::FETCH_OBJ));
+
+
+			$stmt_target = $this->db->prepare("SELECT ".$this->id.", ".$this->name.", ".$this->lft.", ".$this->rght. " FROM ".$this->tableName." WHERE id=:id");
+			$stmt_target->bindParam(':id', $targetedId);
+			$stmt_target->execute();
+			$target = array_shift($stmt_target->fetchALL(PDO::FETCH_OBJ));
+			
+
+			/*-----------------------*/
+			$node_size = $moving['rght']-$moving['lft']+1; //'size' of moving node (including all it's sub nodes)
+			/*-----------------------*/
+			debug($moving);
+			debug($target);
+
+
+
+			// Test simple SQL
+			$stmt_moving = $this->db->prepare("
+			SELECT
+			    @movingId := ".$moving['id'].", 
+			    @movingLeft := ".$moving['lft'].", 
+			    @movingRight := ".$moving['rght'].", 
+			    @targetId := ".$target['id'].", 
+			    @targetRight := ".$target['rght']."; 
+			SELECT
+			    @node_size := @movingRight - @movingLeft + 1; 
+
+			UPDATE `menus`
+			SET `lft` = 0-(`lft`), `rght` = 0-(`rght`)
+			WHERE `lft` >= @movingLeft AND `rght` <= @movingRight;
+
+			UPDATE `menus`
+			SET `lft` = `lft` - @node_size
+			WHERE `lft` > @movingRight;
+			UPDATE `menus`
+			SET `rght` = `rght` - @node_size
+			WHERE `rght` > @movingRight;
+
+			UPDATE `menus`
+			SET `lft` = `lft` + @node_size
+			WHERE `lft` >= IF(@targetRight > @movingRight, @targetRight - @node_size, @targetRight);
+
+			UPDATE `menus`
+			SET `rght` = `rght` + @node_size
+			WHERE `rght` >= IF(@targetRight > @movingRight, @targetRight - @node_size, @targetRight);
+
+			UPDATE `menus`
+			SET
+			    `lft` = 0-(`lft`)+IF(@targetRight > @movingRight, @targetRight - @movingRight - 1, @targetRight - @movingRight - 1 + @node_size),
+
+			    `rght` = 0-(`rght`)+IF(@targetRight > @movingRight, @targetRight - @movingRight - 1, @targetRight - @movingRight - 1 + @node_size)
+			WHERE `lft` <= 0-@movingLeft AND `rght` >= 0-@movingRight;
+
+
+			");
+			/*$movingId = "22";
+			$movingLeft = "2";
+			$movingRight = "5";
+			$targetId = '23';
+			$targetRight = "11";
+
+			$stmt_moving->bindParam(':movingId', $movingId);
+			$stmt_moving->bindParam(':movingLeft', $movingLeft);
+			$stmt_moving->bindParam(':movingRight', $movingRight);
+			$stmt_moving->bindParam(':targetId', $targetId);
+			$stmt_moving->bindParam(':targetRight', $targetRight);*/
+			$stmt_moving->execute();
+			//debug($stmt_moving);
+			//die();
+
+
+
+
+
+
+
+
+
+
+			/*// On met de coté la branche que l'on veut déplacer
+			$stmt_1 = $this->db->prepare("UPDATE ".$this->tableName." SET ".$this->lft."=0-(".$this->lft."), ".$this->rght."=0-(".$this->rght.") WHERE ".$this->lft.">=:movingLeft AND ".$this->rght."<=:movingRight");
+			$stmt_1->bindParam(':movingLeft', $target['lft']);
+			$stmt_1->bindParam(':movingRight', $target['rght']);
+			$stmt_1->execute();
+
+
+
+			// Modification de l'arbre cible
+			$stmt_2a = $this->db->prepare("UPDATE ".$this->tableName." SET ".$this->lft."=".$this->lft."-:nodeSize WHERE ".$this->lft.">:movingRight");
+			$stmt_2a->bindParam(':movingRight', $moving['rght']);
+			$stmt_2a->bindParam(':nodeSize', $node_size);
+			$stmt_2a->execute();
+			
+
+
+			$stmt_2b = $this->db->prepare("UPDATE ".$this->tableName." SET ".$this->rght."=".$this->rght."-:nodeSize WHERE ".$this->rght.">:movingRight");
+			$stmt_2b->bindParam(':movingRight', $moving['rght']);
+			$stmt_2b->bindParam(':nodeSize', $node_size);
+			$stmt_2b->execute();
+			
+			
+			
+
+			// Mise à jour de la cible
+			if($target['rght']>$moving['rght']){
+				$tmp = $target['rght']-$node_size;
+				$stmt_3a = $this->db->prepare("UPDATE ".$this->tableName." SET ".$this->lft."=".$this->lft."+:nodeSize WHERE ".$this->lft.">=:tmp");
+				$stmt_3a->bindParam(':nodeSize', $node_size);
+				$stmt_3a->bindParam(':tmp', $tmp);
+				$stmt_3a->execute();
+
+
+
+				$stmt_3b = $this->db->prepare("UPDATE ".$this->tableName." SET ".$this->rght."=".$this->rght."+:nodeSize WHERE ".$this->rght.">=:tmp");
+				$stmt_3b->bindParam(':nodeSize', $node_size);
+				$stmt_3b->bindParam(':tmp', $tmp);
+				$stmt_3b->execute();
+
+
+
+			}else{
+				$stmt_3a = $this->db->prepare("UPDATE ".$this->tableName." SET ".$this->lft."=".$this->lft."+:nodeSize WHERE ".$this->lft.">=:targetRight");
+				$stmt_3a->bindParam(':nodeSize', $node_size);
+				$stmt_3a->bindParam(':targetRight', $target['rght']);
+				$stmt_3a->execute();
+
+
+
+				$stmt_3b = $this->db->prepare("UPDATE ".$this->tableName." SET ".$this->rght."=".$this->rght."+:nodeSize WHERE ".$this->rght.">=:targetRight");
+				$stmt_3b->bindParam(':nodeSize', $node_size);
+				$stmt_3b->bindParam(':targetRight', $target['rght']);
+				$stmt_3b->execute();
+				
+
+
+			}
+
+
+			// Réinjection de l'arbre à déplacer
+			if($target['rght']>$moving['rght']){
+				$tmp2 = $target['rght']-$moving['rght']-1;
+				$stmt_4 = $this->db->prepare("UPDATE ".$this->tableName." SET ".$this->lft."=0-(".$this->lft.")+:tmp, ".$this->rght."=0-(".$this->rght.")+:tmp WHERE ".$this->lft."<=:movingLeft AND ".$this->rght.">=0-:movingRight");
+				$stmt_4->bindParam(':tmp', $tmp2);
+				$stmt_4->bindParam(':movingLeft', $moving['lft']);
+				$stmt_4->bindParam(':movingRight', $moving['rght']);
+				$stmt_4->execute();
+
+
+
+			}else{
+				$tmp2 = $target['rght']-$moving['rght']-1+$node_size;
+				$stmt_4 = $this->db->prepare("UPDATE ".$this->tableName." SET ".$this->lft."=0-(".$this->lft.")+:tmp, ".$this->rght."=0-(".$this->rght.")+:tmp WHERE ".$this->lft."<=:movingLeft AND ".$this->rght.">=0-:movingRight");
+				$stmt_4->bindParam(':tmp', $tmp2);
+				$stmt_4->bindParam(':movingLeft', $moving['lft']);
+				$stmt_4->bindParam(':movingRight', $moving['rght']);
+				$stmt_4->execute();
+			}*/
+
+
+			
+
+
+			return TRUE;
+
+		}
+
+		/**
+		* @add a node
+		* @access public
+		* @param string $left_node
+		* @param string $new_node
+		**/
+		public function addNode($left_node, $new_node){
+			try{
+				$this->db->beginTransaction();
+				$stmt = $this->db->prepare("SELECT @myRight:=".$this->rght." FROM ".$this->tableName." WHERE ".$this->name."=:left_node"); // @myRight is a SQL variable
+				$stmt->bindParam(':left_node', $left_node);
+				//debug($stmt);
+				$stmt->execute();
+				/** Increment the nodes by two **/
+				$this->db->exec("UPDATE ".$this->tableName." SET ".$this->rght."=".$this->rght."+2 WHERE ".$this->rght.">@myRight");
+				$this->db->exec("UPDATE ".$this->tableName." SET ".$this->lft."=".$this->lft."+2 WHERE ".$this->lft.">@myRight");
+				/** Insert the new node **/
+				$stmt = $this->db->prepare("INSERT INTO ".$this->tableName."(".$this->name.", ".$this->lft.", ".$this->rght.") VALUES (:new_node, @myRight+1, @myRight+2)");
+				$stmt->bindParam(':new_node', $new_node);
+				$stmt->execute();
+				/** Commit the transaction **/
+				$this->db->commit();
+
+				return TRUE;
+			}
+			catch(Exception $e){
+				$this->db->rollBack();
+				throw new Exception($e);
+			}
+		}
+
+		/**
+		* @add a node
+		* @access public
+		* @param string $left_node
+		* @param string $new_node
+		**/
+		public function menuAddNode($left_node, $new_node, $link){
+			try{
+				$this->db->beginTransaction();
+				$stmt = $this->db->prepare("SELECT @myRight:=".$this->rght." FROM ".$this->tableName." WHERE ".$this->name."=:left_node"); // @myRight is a SQL variable
+				$stmt->bindParam(':left_node', $left_node);
+				//debug($stmt);
+				$stmt->execute();
+				/** Increment the nodes by two **/
+				$this->db->exec("UPDATE ".$this->tableName." SET ".$this->rght."=".$this->rght."+2 WHERE ".$this->rght.">@myRight");
+				$this->db->exec("UPDATE ".$this->tableName." SET ".$this->lft."=".$this->lft."+2 WHERE ".$this->lft.">@myRight");
+				/** Insert the new node **/
+				$stmt = $this->db->prepare("INSERT INTO ".$this->tableName."(name, link, ".$this->lft.", ".$this->rght.") VALUES (:new_node, :link, @myRight+1, @myRight+2)");
+				$stmt->bindParam(':new_node', $new_node);
+				$stmt->bindParam(':link', $link);
+				$stmt->execute();
+				/** Commit the transaction **/
+				$this->db->commit();
+
+				return TRUE;
+			}
+			catch(Exception $e){
+				$this->db->rollBack();
+				throw new Exception($e);
+			}
+		}
+
+		/**
+		* @add child node
+		* @adds a child to a node that has no children
+		*
+		* @access public
+		* @param string $node_name The node to add to
+		* @param string $new_node The name of the new child node
+		* @return array
+		**/
+		public function addChildNode($node_name, $new_node){
+			try{
+				$this->db->beginTransaction();
+				$stmt = $this->db->prepare("SELECT @myLeft:=".$this->lft." FROM ".$this->tableName." WHERE ".$this->name."=:node_name");
+				$stmt->bindParam(':node_name', $node_name);
+				$stmt->execute();
+				$this->db->exec("UPDATE ".$this->tableName." SET ".$this->rght."=".$this->rght."+2 WHERE ".$this->rght.">@myLeft");
+				$this->db->exec("UPDATE ".$this->tableName." SET ".$this->lft."=".$this->lft."+2 WHERE ".$this->lft.">@myLeft");
+				$stmt = $this->db->prepare("INSERT INTO ".$this->tableName."(".$this->name.", ".$this->lft.", ".$this->rght.") VALUES(:new_node, @myLeft+1, @myleft+2)");
+				$stmt->bindParam(':new_node', $new_node);
+
+				$stmt->execute();
+				$this->db->commit();
+
+				return TRUE;
+			}
+			catch(Exception $e){
+				$this->db->rollBack();
+				throw new Exception($e);
+			}
+		}
+
+		/**
+		* @add child node
+		* @adds a child to a node that has no children
+		*
+		* @access public
+		* @param string $node_name The node to add to
+		* @param string $new_node The name of the new child node
+		* @return array
+		**/
+		public function menuAddChildNode($node_name, $new_node, $link){
+			try{
+				$this->db->beginTransaction();
+				$stmt = $this->db->prepare("SELECT @myLeft:=".$this->lft." FROM ".$this->tableName." WHERE ".$this->name."=:node_name");
+				$stmt->bindParam(':node_name', $node_name);
+				$stmt->execute();
+				$this->db->exec("UPDATE ".$this->tableName." SET ".$this->rght."=".$this->rght."+2 WHERE ".$this->rght.">@myLeft");
+				$this->db->exec("UPDATE ".$this->tableName." SET ".$this->lft."=".$this->lft."+2 WHERE ".$this->lft.">@myLeft");
+				$stmt = $this->db->prepare("INSERT INTO ".$this->tableName."(name, link,".$this->lft.", ".$this->rght.") VALUES(:new_node, :link, @myLeft+1, @myleft+2)");
+				$stmt->bindParam(':new_node', $new_node);
+				$stmt->bindParam(':link', $link);
+
+				$stmt->execute();
+				$this->db->commit();
+
+				// var_dump($stmt); die();
+
+				return TRUE;
+			}
+			catch(Exception $e){
+				$this->db->rollBack();
+				throw new Exception($e);
+			}
+		}
+
+		/**
+		* @Delete a leaf node
+		*
+		* @param string $node_name
+		* @access public
+		**/
+		public function deleteLeafNode($node_name){
+			try{
+				conn::getInstance()->beginTransaction();
+				$stmt = $this->db->prepare("SELECT @myLeft:=".$this->lft.", @myRight:=".$this->rght.", @myWidth:=".$this->rght."-".$this->lft."+1 FROM ".$this->tableName." WHERE ".$this->name."=:node_name");
+				$stmt->bindParam(':node_name', $node_name);
+				$stmt->execute();
+				conn::getInstance()->exec("DELETE FROM ".$this->tableName." WHERE ".$this->lft." BETWEEN @myLeft AND @myRight");
+				conn::getInstance()->exec("UPDATE ".$this->tableName." SET ".$this->rght."=".$this->rght."-@myWidth WHERE ".$this->rght.">@myRight");
+				conn::getInstance()->exec("UPDATE ".$this->tableName." SET ".$this->lft."=".$this->lft."-@myWidht WHERE ".$this->lft.">@myRight");
+				conn::getInstance()->commit();
+			}
+			catch(Exception $e){
+				conn::getInstance()->rollBack();
+				throw new Exception($e);
+			}
+		}
+
+		/**
+		* Delete a node and all its children
+		* 
+		* @param string $node_name
+		* @access public
+		**/
+		public function deleteNodeRecursive($node_name){
+			try{
+				$this->db->beginTransaction();
+				$stmt = $this->db->prepare("SELECT @myLeft:=".$this->lft.", @myRight:=".$this->rght.", @myWidth:=".$this->rght."-".$this->lft."+1 FROM ".$this->tableName." WHERE ".$this->name."=:node_name");
+				$stmt->bindParam(':node_name', $node_name);
+				$stmt->execute();
+				$this->db->exec("DELETE FROM ".$this->tableName." WHERE ".$this->lft." BETWEEN @myLeft AND @myRight");
+				$this->db->exec("UPDATE ".$this->tableName." SET ".$this->rght."=".$this->rght."-@myWidth WHERE ".$this->rght.">@myRight");
+				$this->db->exec("UPDATE ".$this->tableName." SET ".$this->lft."=".$this->lft."-@myWidth WHERE ".$this->lft.">@myRight");
+				$this->db->commit();
+
+				return TRUE;
+			}
+			catch(Exception $e){
+				$this->db->rollBack();
+				throw new Exception($e);
+			}
+		}
+
+		/**
+		* Create menu from MPTT with option
+		* @param boulean $treeName
+		* @access public
+		* @return array
+		**/
+		public function buildMenu($treeName=true){
+			
+			$menu = array();
+			/*$test = "&#139;ul&#155;";*/
+			$html = "<ul>";
+			$depth = 0;
+			$level = array(0 => 0);
+
+			$iterators = new recursiveArrayIterator($this->getNodeDepth());
+			$iteratorsNb = count($iterators);
+
+			try{
+                foreach($iterators as $key){
+                    /* HTML FORMAT */
+                     if($key['depth'] == $depth){
+                    	if($level[$key['depth']] == 1){
+                    		$html .= "</li><li>";
+                    	}else{
+                    		$html .= "<li>";
+                    	}
+                    	$html .= $key['name'];
+                    	
+                    	$level[$key['depth']] = 1;
+                    	$depth = $key['depth'];
+                    }
+
+
+                    if($key['depth'] > $depth){
+                    	$html .= "<ul><li>";
+                    	$html .= $key['name'];
+
+                    	$level[$key['depth']] = 1;
+                    	$depth = $key['depth'];
+                    }
+                    if($key['depth'] < $depth){
+                    	$factor = $depth - $key['depth'];
+                    	$html .= str_repeat("</li></ul></li>", $factor);
+                    	$html .= "<li>";
+
+						$html .= $key['name'];
+						$level[$key['depth']] = 1;
+						$depth = $key['depth'];
+                    }
+                    /* END HTML FORMAT */
+                }
+               	/* HTML FORMAT */
+                $factor = $iterators[($iteratorsNb-1)]['depth'];
+                $html .= str_repeat("</li></ul>", ($factor+1));
+                /* END HTML FORMAT */
+            }
+            catch(Exception $e){
+                debug($e->getMessage());die();
+            }
+
+
+			$menu['html'] = $html;
+			
+
+			return $menu;
+		}
+
+		/**
+		* Create menu from MPTT with option
+		* @param boulean $treeName
+		* @access public
+		* @return array
+		**/
+		public function buildMenuAdmin($treeName=true){
+			
+			$menu = array();
+			/*$test = "&#139;ul&#155;";*/
+			$html = "<ul>";
+			$depth = 0;
+			$level = array(0 => 0);
+
+			$iterators = new recursiveArrayIterator($this->getNodeDepth());
+			$iteratorsNb = count($iterators);
+
+			try{
+                foreach($iterators as $key){
+                    /* HTML FORMAT */
+                     if($key['depth'] == $depth){
+                    	if($level[$key['depth']] == 1){
+                    		$html .= "</li><li>";
+                    	}else{
+                    		$html .= "<li>";
+                    	}
+                    	$html .= $key['name'];
+                    	
+                    	$level[$key['depth']] = 1;
+                    	$depth = $key['depth'];
+                    }
+
+
+                    if($key['depth'] > $depth){
+                    	$html .= "<ul><li>";
+                    	$html .= $key['name'];
+
+                    	$level[$key['depth']] = 1;
+                    	$depth = $key['depth'];
+                    }
+                    if($key['depth'] < $depth){
+                    	$factor = $depth - $key['depth'];
+                    	$html .= str_repeat("</li></ul></li>", $factor);
+                    	$html .= "<li>";
+
+						$html .= $key['name'];
+						$level[$key['depth']] = 1;
+						$depth = $key['depth'];
+                    }
+                    /* END HTML FORMAT */
+                }
+               	/* HTML FORMAT */
+                $factor = $iterators[($iteratorsNb-1)]['depth'];
+                $html .= str_repeat("</li></ul>", ($factor+1));
+                /* END HTML FORMAT */
+            }
+            catch(Exception $e){
+                debug($e->getMessage());die();
+            }
+
+
+			$menu['html'] = $html;
+			
+			return $menu;
+		}
+	}
+
+?>

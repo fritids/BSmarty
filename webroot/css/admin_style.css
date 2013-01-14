@@ -1,0 +1,9 @@
+body{
+	overflow-x: hidden;
+}
+
+.wysiwyg { 
+	width: 100%;
+	min-height: 550px;
+	resize: vertical;
+}

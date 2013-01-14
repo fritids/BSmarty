@@ -1,0 +1,4 @@
+RewriteEngine On
+RewriteRule (.*) webroot/$1 [L]
+
+php_flag magic_quotes_gpc Off
